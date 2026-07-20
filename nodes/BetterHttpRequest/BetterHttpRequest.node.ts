@@ -1587,6 +1587,112 @@ export class BetterHttpRequest implements INodeType {
 		// Replace null values with empty strings to avoid serialization issues
 		returnItems = returnItems.map(replaceNullValues);
 
+		// === POST-PROCESSING CODE BLOCK ===
+		// Runs user-supplied JavaScript on the fully-resolved output items.
+		// Fires after retries and fallback substitution, on clean data.
+		const enablePostProcessing = this.getNodeParameter(
+			'enablePostProcessing',
+			0,
+			false,
+		) as boolean;
+
+		if (enablePostProcessing) {
+			const userCode = this.getNodeParameter('postProcessingCode', 0, '') as string;
+			const trimmedCode = userCode.trim();
+
+			if (trimmedCode) {
+				try {
+					// Lazily require vm — it's a Node.js built-in, always available
+					// eslint-disable-next-line @typescript-eslint/no-var-requires
+					const vm = require('vm') as typeof import('vm');
+
+					// ── Build a safe sandbox ──────────────────────────────────────
+					// Prototype is null to block prototype-chain escape attacks.
+					// Only explicitly listed variables are visible to user code.
+					const nodeRef = this.getNode();
+					const sandboxItems = returnItems; // direct reference so mutations work
+
+					const sandbox: Record<string, unknown> = Object.assign(
+						Object.create(null),
+						{
+							items: sandboxItems,
+
+							// $input mirrors the n8n Code node's $input helpers
+							$input: {
+								all: () => items,
+								first: () => items[0] ?? null,
+								get item() { return items[0] ?? null; },
+							},
+
+							// $node provides read-only node identity metadata
+							$node: {
+								name: nodeRef.name,
+								id: nodeRef.id,
+								type: nodeRef.type,
+							},
+
+							// console routes to n8n's structured logger
+							console: {
+								log:   (...args: unknown[]) =>
+									this.logger.info('[postProcess] ' + args.map(String).join(' ')),
+								info:  (...args: unknown[]) =>
+									this.logger.info('[postProcess] ' + args.map(String).join(' ')),
+								warn:  (...args: unknown[]) =>
+									this.logger.warn('[postProcess] ' + args.map(String).join(' ')),
+								error: (...args: unknown[]) =>
+									this.logger.error('[postProcess] ' + args.map(String).join(' ')),
+								debug: (...args: unknown[]) =>
+									this.logger.debug('[postProcess] ' + args.map(String).join(' ')),
+							},
+
+							// Make Promise available so async/await works in the VM context
+							Promise,
+						},
+					);
+
+					const ctx = vm.createContext(sandbox);
+
+					// Wrap in async IIFE so the user can freely use `await`
+					const script = new vm.Script(`(async () => {\n${trimmedCode}\n})()`);
+
+					this.logger.debug('Running post-processing code block');
+
+					const resultPromise = script.runInContext(ctx) as Promise<unknown>;
+					const result = await resultPromise;
+
+					// If the user returned an array, use it as the new output
+					if (Array.isArray(result)) {
+						returnItems = result as INodeExecutionData[];
+						this.logger.debug(
+							`Post-processing replaced output with ${returnItems.length} items`,
+						);
+					}
+					// Otherwise items pass through unchanged (mutations to sandbox.items
+					// already applied in place since sandboxItems === returnItems)
+
+				} catch (error) {
+					const msg = `Post-processing code error: ${(error as Error).message}`;
+					this.logger.error(msg);
+					if (!this.continueOnFail()) {
+						throw new NodeOperationError(this.getNode(), msg, {
+							description:
+								'Check the JavaScript code in the "Post-Processing Code" field.',
+						});
+					}
+					// continueOnFail: append an error item so the workflow can continue
+					returnItems.push({
+						json: {
+							error: {
+								message: (error as Error).message,
+								source: 'postProcessingCode',
+							},
+						},
+						pairedItem: { item: 0 },
+					});
+				}
+			}
+		}
+
 		this.logger.debug('Better HTTP Request node execution finished', { returnItemsLength: returnItems.length });
 
 		// === Execution Hint for UI ===

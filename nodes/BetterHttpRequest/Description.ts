@@ -817,6 +817,43 @@ export const mainProperties: INodeProperties[] = [
 			},
 		],
 	},
+	// ─── Post-Processing Code Block ────────────────────────────────────────────
+	{
+		displayName: 'Post-Processing Code',
+		name: 'enablePostProcessing',
+		type: 'boolean',
+		default: false,
+		noDataExpression: true,
+		description:
+			'Whether to run a JavaScript snippet after the HTTP request completes. Use it to transform output items, log data, or publish messages — without adding a separate Code node.',
+	},
+	{
+		displayName: 'Code',
+		name: 'postProcessingCode',
+		type: 'string',
+		typeOptions: {
+			editor: 'codeNodeEditor',
+			editorLanguage: 'javaScript',
+		},
+		default: `// Available variables:
+//   items       — array of output items ({ json, binary?, pairedItem })
+//   $input      — original input: $input.all(), $input.first(), $input.item
+//   $node       — { name, id, type }
+//   console     — console.log / .warn / .error (writes to execution log)
+//
+// Return a new/modified items array to replace output, or return nothing to pass through.
+
+// Example — add a field to every item:
+// for (const item of items) {
+//   item.json.processedAt = new Date().toISOString();
+// }
+// return items;`,
+		noDataExpression: false,
+		displayOptions: { show: { enablePostProcessing: [true] } },
+		hint: 'Supports async/await. Return an items array to replace output, or omit return to pass through unchanged.',
+		description:
+			'JavaScript code that runs on the final output items after all HTTP requests and retries complete.',
+	},
 	{
 		displayName:
 			"You can view the raw requests this node makes in your browser's developer console",
