@@ -61,7 +61,7 @@ export class BetterHttpRequest implements INodeType {
 		name: 'betterHttpRequest',
 		icon: 'file:betterhttp.svg',
 		group: ['output'],
-		subtitle: '={{$parameter["method"] + ": " + $parameter["url"]}}',
+		subtitle: '={{($parameter["nodeLabel"] ? $parameter["nodeLabel"] + "  " : "") + $parameter["method"] + ": " + $parameter["url"]}}',
 		version: 1,
 		defaults: {
 			name: 'Better HTTP Request',
@@ -880,15 +880,80 @@ export class BetterHttpRequest implements INodeType {
 
 		// === RESPONSE PROCESSING PHASE: Process results and build output ===
 		let responseData: any;
+
+		// ─── Fallback Response Helper ────────────────────────────────────────────
+		// Builds a synthetic full-response-shaped item when useFallbackResponse is
+		// enabled, replacing the error item with { statusCode, headers, body }.
+		const buildFallbackItem = (itemIndex: number): INodeExecutionData | null => {
+			const useFallback = this.getNodeParameter(
+				'options.useFallbackResponse',
+				itemIndex,
+				false,
+			) as boolean;
+			if (!useFallback) return null;
+
+			// Parse the fallback body — supports expressions and raw JSON strings
+			let fallbackBody: IDataObject | unknown;
+			const rawBody = this.getNodeParameter(
+				'options.fallbackResponseBody',
+				itemIndex,
+				'{}',
+			);
+			if (typeof rawBody === 'string') {
+				try {
+					fallbackBody = JSON.parse(rawBody);
+				} catch {
+					fallbackBody = rawBody;
+				}
+			} else {
+				fallbackBody = rawBody ?? {};
+			}
+
+			// Build headers object from key-value pairs
+			const rawHeaders = this.getNodeParameter(
+				'options.fallbackResponseHeaders.headers',
+				itemIndex,
+				[],
+			) as Array<{ name: string; value: string }>;
+			const headersObj: Record<string, string> = {};
+			for (const h of rawHeaders) {
+				if (h.name) headersObj[h.name.toLowerCase()] = h.value;
+			}
+
+			const statusCode = this.getNodeParameter(
+				'options.fallbackStatusCode',
+				itemIndex,
+				200,
+			) as number;
+
+			return {
+				json: {
+					statusCode,
+					headers: headersObj,
+					body: fallbackBody,
+				} as IDataObject,
+				pairedItem: { item: itemIndex },
+			};
+		};
+
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			try {
 				responseData = promisesResponses[itemIndex];
 
 				if (errorItems[itemIndex]) {
-					returnItems.push({
-						json: { error: errorItems[itemIndex] },
-						pairedItem: { item: itemIndex },
-					});
+					// Build-phase failure: use fallback if configured, otherwise error item
+					const fallbackItem = buildFallbackItem(itemIndex);
+					if (fallbackItem) {
+						this.logger.debug(
+							`Using fallback response for build-phase error on item ${itemIndex}`,
+						);
+						returnItems.push(fallbackItem);
+					} else {
+						returnItems.push({
+							json: { error: errorItems[itemIndex] },
+							pairedItem: { item: itemIndex },
+						});
+					}
 					continue;
 				}
 
@@ -950,10 +1015,19 @@ export class BetterHttpRequest implements INodeType {
 						} else {
 							safeError = { message: String(reason) };
 						}
-						returnItems.push({
-							json: { error: safeError },
-							pairedItem: { item: itemIndex },
-						});
+						// Execution-phase failure: use fallback if configured, otherwise error item
+						const fallbackItem = buildFallbackItem(itemIndex);
+						if (fallbackItem) {
+							this.logger.debug(
+								`Using fallback response for HTTP error on item ${itemIndex}`,
+							);
+							returnItems.push(fallbackItem);
+						} else {
+							returnItems.push({
+								json: { error: safeError },
+								pairedItem: { item: itemIndex },
+							});
+						}
 						continue;
 					}
 				}

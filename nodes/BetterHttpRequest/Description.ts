@@ -1,6 +1,17 @@
 import type { INodeProperties } from 'n8n-workflow';
 
 export const mainProperties: INodeProperties[] = [
+	// ─── Node Label / Icon ──────────────────────────────────────────────────────
+	{
+		displayName: 'Node Label',
+		name: 'nodeLabel',
+		type: 'string',
+		default: '',
+		placeholder: '🚀  My API Call',
+		description:
+			'Optional emoji or short label displayed on the node canvas (shown as a prefix in the node subtitle). Example: 🚀 or ✅ or any short text.',
+		hint: 'Paste an emoji or short text — it will appear before the method & URL on the canvas.',
+	},
 	{
 		displayName: 'Method',
 		name: 'method',
@@ -742,6 +753,67 @@ export const mainProperties: INodeProperties[] = [
 				default: '429,500,502,503,504',
 				description: 'Comma-separated list of HTTP status codes that should trigger a retry',
 				displayOptions: { show: { retryOnFail: [true] } },
+			},
+			// ─── Fallback Response (new feature) ───────────────────────────────
+			{
+				displayName: 'Use Fallback Response',
+				name: 'useFallbackResponse',
+				type: 'boolean',
+				default: false,
+				description:
+					'Whether to emit a synthetic fallback item instead of an error item when the HTTP request fails. Requires "Continue On Fail" to be enabled on the node.',
+			},
+			{
+				displayName: 'Fallback Response Body',
+				name: 'fallbackResponseBody',
+				type: 'json',
+				default: '{}',
+				description:
+					'The JSON body to output when the request fails. Supports n8n expressions (e.g. <code>={{ { "status": "unavailable" } }}</code>).',
+				hint: 'Use expressions to reference input item data or workflow variables.',
+				displayOptions: { show: { useFallbackResponse: [true] } },
+			},
+			{
+				displayName: 'Fallback Response Headers',
+				name: 'fallbackResponseHeaders',
+				type: 'fixedCollection',
+				typeOptions: { multipleValues: true },
+				placeholder: 'Add Header',
+				default: { headers: [] },
+				description: 'Headers to include in the fallback response item. Each value supports expressions.',
+				displayOptions: { show: { useFallbackResponse: [true] } },
+				options: [
+					{
+						name: 'headers',
+						displayName: 'Header',
+						values: [
+							{
+								displayName: 'Name',
+								name: 'name',
+								type: 'string',
+								default: '',
+								placeholder: 'e.g. content-type',
+							},
+							{
+								displayName: 'Value',
+								name: 'value',
+								type: 'string',
+								default: '',
+								placeholder: 'e.g. application/json',
+							},
+						],
+					},
+				],
+			},
+			{
+				displayName: 'Fallback Status Code',
+				name: 'fallbackStatusCode',
+				type: 'number',
+				default: 200,
+				description:
+					'The HTTP status code to include in the fallback response item (e.g. 200 to make downstream nodes treat the failure as a success).',
+				typeOptions: { minValue: 100, maxValue: 599 },
+				displayOptions: { show: { useFallbackResponse: [true] } },
 			},
 		],
 	},

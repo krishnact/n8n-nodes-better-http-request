@@ -8,7 +8,7 @@
   ],
   "main": "dist/nodes/BetterHttpRequest/BetterHttpRequest.node.js",
   "scripts": {
-    "build": "tsc && mkdir -p dist/nodes/BetterHttpRequest && cp nodes/BetterHttpRequest/betterhttp.svg dist/nodes/BetterHttpRequest/betterhttp.svg",
+    "build": "tsc && node -e \"const fs=require('fs');fs.mkdirSync('dist/nodes/BetterHttpRequest',{recursive:true});fs.copyFileSync('nodes/BetterHttpRequest/betterhttp.svg','dist/nodes/BetterHttpRequest/betterhttp.svg')\"",
     "test": "jest --forceExit --detectOpenHandles"
   },
   "files": [
